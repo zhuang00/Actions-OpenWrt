@@ -10,7 +10,7 @@
 # See /LICENSE for more information.
 #
 
-name: OpenWrt Build test
+name: Build test
 
 on:
   repository_dispatch:
@@ -64,7 +64,7 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        make download -j8
+        make package/firmware/wireless-regdb/download
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 

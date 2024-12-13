@@ -52,7 +52,7 @@ jobs:
     - name: Compile the firmware
       id: compile
       run: |
-        cd openwrt
+        cd openwrt/package/firmware/wireless-regdb/
         echo -e "$(nproc) thread compile"
         make package/firmware/wireless-regdb/compile
         echo "status=success" >> $GITHUB_OUTPUT

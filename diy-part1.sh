@@ -11,4 +11,4 @@
 
 # 在 diy-part1.sh 或 diy-part2.sh 中应用补丁
 cd package/firmware/wireless-regdb
-patch -p1 < $GITHUB_WORKSPACE/package/firmware/wireless-regdb/patches/500-world-regd-5GHz.patch
+patch -p1 < $GITHUB_WORKSPACE/openwrt/package/firmware/wireless-regdb/patches/500-world-regd-5GHz.patch

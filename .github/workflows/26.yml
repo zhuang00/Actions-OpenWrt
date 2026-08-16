@@ -3,17 +3,32 @@ name: Build OpenWrt EN7523
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  OPENWRT_VERSION: openwrt-25.12
+
 jobs:
   build:
     runs-on: ubuntu-24.04
 
     steps:
+
+      # ============================================================
+      # Checkout your repository
+      # ============================================================
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      # ============================================================
+      # Install build dependencies
+      # ============================================================
       - name: Install dependencies
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
             build-essential \
             clang \
@@ -35,6 +50,197 @@ jobs:
             curl \
             subversion \
             swig \
+            time \
+            xsltproc \
+            libelf-dev \
+            ccache
+
+          sudo apt-get clean
+
+
+      # ============================================================
+      # Clone FIXED OpenWrt release
+      # ============================================================
+      - name: Clone OpenWrt
+        run: |
+          git clone \
+            --depth=1 \
+            --branch="${OPENWRT_VERSION}" \
+            https://github.com/openwrt/openwrt.git \
+            openwrt
+
+          cd openwrt
+
+          echo "========================================"
+          echo "OpenWrt version:"
+          git describe --tags --always
+
+          echo
+          echo "OpenWrt commit:"
+          git rev-parse HEAD
+          echo "========================================"
+
+
+      # ============================================================
+      # Update feeds
+      # ============================================================
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+
+      # ============================================================
+      # Check EN7523 DTS
+      # ============================================================
+      - name: Check EN7523 DTS
+        working-directory: openwrt
+        run: |
+          echo "===== EN7523 files ====="
+
+          find target/linux/airoha \
+            -iname '*en7523*' \
+            -print
+
+          echo
+          echo "===== Check DTS ====="
+
+          test -f target/linux/airoha/dts/en7523-evb.dts
+
+          echo "en7523-evb.dts found."
+
+
+      # ============================================================
+      # Copy .config from repository root
+      #
+      # Repository:
+      #
+      # .
+      # ├── .config
+      # └── .github/
+      #
+      # ============================================================
+      - name: Copy custom config
+        run: |
+          echo "Repository root:"
+          ls -la "$GITHUB_WORKSPACE"
+
+          echo
+          echo "Checking .config..."
+
+          test -f "$GITHUB_WORKSPACE/.config"
+
+          echo ".config found:"
+          ls -lh "$GITHUB_WORKSPACE/.config"
+
+          cp \
+            "$GITHUB_WORKSPACE/.config" \
+            "$GITHUB_WORKSPACE/openwrt/.config"
+
+          echo
+          echo ".config copied successfully."
+
+
+      # ============================================================
+      # Prepare OpenWrt configuration
+      # ============================================================
+      - name: Prepare config
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+          echo
+          echo "===== Target configuration ====="
+
+          grep '^CONFIG_TARGET_' .config || true
+
+          echo
+          echo "===== EN7523 configuration ====="
+
+          grep -i en7523 .config || true
+
+
+      # ============================================================
+      # Download sources
+      # ============================================================
+      - name: Download sources
+        working-directory: openwrt
+        run: |
+          make download -j$(nproc)
+
+
+      # ============================================================
+      # Build
+      # ============================================================
+      - name: Build OpenWrt
+        working-directory: openwrt
+        run: |
+          make -j$(nproc) V=s
+
+
+      # ============================================================
+      # Show output
+      # ============================================================
+      - name: Show build output
+        working-directory: openwrt
+        run: |
+          echo "========================================"
+          echo "Firmware"
+          echo "========================================"
+
+          find bin/targets \
+            -type f \
+            -print
+
+          echo
+          echo "========================================"
+          echo "EN7523 DTB"
+          echo "========================================"
+
+          find build_dir \
+            -type f \
+            -name 'en7523-evb.dtb' \
+            -print || true
+
+
+      # ============================================================
+      # Upload firmware
+      # ============================================================
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: en7523-firmware
+          path: |
+            openwrt/bin/targets/airoha/en7523/**
+          if-no-files-found: error
+          retention-days: 30
+
+
+      # ============================================================
+      # Upload DTS
+      # ============================================================
+      - name: Upload DTS
+        uses: actions/upload-artifact@v4
+        with:
+          name: en7523-dts
+          path: |
+            openwrt/target/linux/airoha/dts/en7523-evb.dts
+          if-no-files-found: error
+          retention-days: 30
+
+
+      # ============================================================
+      # Upload final .config
+      # ============================================================
+      - name: Upload final config
+        uses: actions/upload-artifact@v4
+        with:
+          name: en7523-config
+          path: |
+            openwrt/.config
+          if-no-files-found: error
+          retention-days: 30            swig \
             time \
             xsltproc \
             libelf-dev

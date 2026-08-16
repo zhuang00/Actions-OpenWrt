@@ -58,11 +58,18 @@ jobs:
 
           test -f target/linux/airoha/dts/en7523-evb.dts
 
-      - name: Configure
-        working-directory: openwrt
+      - name: Copy custom config
         run: |
-          cp .config openwrt/.config
-          
+          echo "Repository root:"
+          ls -la "$GITHUB_WORKSPACE"
+
+          test -f "$GITHUB_WORKSPACE/.config"
+
+          cp "$GITHUB_WORKSPACE/.config" \
+             "$GITHUB_WORKSPACE/openwrt/.config"
+
+          echo "Config copied successfully."
+
       - name: Prepare config
         working-directory: openwrt
         run: |
@@ -86,7 +93,10 @@ jobs:
 
           echo
           echo "===== DTB ====="
-          find build_dir -type f -name 'en7523-evb.dtb' -print
+          find build_dir \
+            -type f \
+            -name 'en7523-evb.dtb' \
+            -print
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
@@ -94,6 +104,7 @@ jobs:
           name: en7523-firmware
           path: |
             openwrt/bin/targets/airoha/en7523/**
+          if-no-files-found: error
 
       - name: Upload DTS
         uses: actions/upload-artifact@v4
@@ -101,3 +112,4 @@ jobs:
           name: en7523-dtb
           path: |
             openwrt/target/linux/airoha/dts/en7523-evb.dts
+          if-no-files-found: error

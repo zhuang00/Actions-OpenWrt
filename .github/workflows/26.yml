@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  OPENWRT_VERSION: openwrt-24.10.8
+  OPENWRT_VERSION: openwrt-24.10
 
 jobs:
   build:

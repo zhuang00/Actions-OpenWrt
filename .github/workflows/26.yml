@@ -3,43 +3,17 @@ name: Build OpenWrt EN7523
 on:
   workflow_dispatch:
 
-  push:
-    branches:
-      - main
-
-  pull_request:
-    branches:
-      - main
-
-permissions:
-  contents: read
-
-env:
-  TZ: Asia/Shanghai
-  OPENWRT_REPO: https://github.com/openwrt/openwrt.git
-  OPENWRT_BRANCH: main
-
 jobs:
   build:
-    name: Build Airoha EN7523 EVB
     runs-on: ubuntu-24.04
 
     steps:
-
-      # ============================================================
-      # 1. Checkout 当前仓库
-      # ============================================================
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-
-      # ============================================================
-      # 2. 安装编译依赖
-      # ============================================================
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             build-essential \
             clang \
@@ -52,7 +26,6 @@ jobs:
             libncurses-dev \
             libssl-dev \
             python3 \
-            python3-distutils \
             python3-setuptools \
             rsync \
             unzip \
@@ -64,253 +37,69 @@ jobs:
             swig \
             time \
             xsltproc \
-            libelf-dev \
-            ccache
+            libelf-dev
 
-          sudo apt-get clean
-
-
-      # ============================================================
-      # 3. 下载 OpenWrt 源码
-      # ============================================================
       - name: Clone OpenWrt
         run: |
-          git clone \
-            --depth=1 \
-            --branch="${OPENWRT_BRANCH}" \
-            "${OPENWRT_REPO}" \
+          git clone --depth=1 \
+            https://github.com/openwrt/openwrt.git \
             openwrt
 
-          cd openwrt
-
-          echo "OpenWrt commit:"
-          git log -1 --oneline
-
-
-      # ============================================================
-      # 4. 更新 feeds
-      # ============================================================
       - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-
-      # ============================================================
-      # 5. 检查 EN7523 EVB DTS
-      # ============================================================
-      - name: Check EN7523 EVB DTS
+      - name: Check EN7523 DTS
         working-directory: openwrt
         run: |
-          echo "Searching EN7523 DTS..."
+          find target/linux/airoha -iname '*en7523*'
 
-          find target/linux/airoha \
-            -type f \
-            \( -name "*en7523*" -o -name "*EN7523*" \) \
-            -print
+          test -f target/linux/airoha/dts/en7523-evb.dts
 
-          echo
-          echo "Checking en7523-evb.dts..."
-
-          if [ -f target/linux/airoha/dts/en7523-evb.dts ]; then
-            echo "en7523-evb.dts found."
-            sed -n '1,200p' target/linux/airoha/dts/en7523-evb.dts
-          else
-            echo "ERROR: en7523-evb.dts not found!"
-            exit 1
-          fi
-
-
-      # ============================================================
-      # 6. 生成默认配置
-      #
-      # Airoha
-      #   └── EN7523
-      #       └── EN7523 Evaluation Board
-      #
-      # ============================================================
-      - name: Generate EN7523 configuration
+      - name: Configure
         working-directory: openwrt
         run: |
-
           cat > .config <<'EOF'
           CONFIG_TARGET_airoha=y
           CONFIG_TARGET_airoha_en7523=y
           CONFIG_TARGET_airoha_en7523_DEVICE_airoha_en7523-evb=y
-
           CONFIG_TARGET_ROOTFS_SQUASHFS=y
-
-          CONFIG_PACKAGE_base-files=y
-          CONFIG_PACKAGE_busybox=y
-          CONFIG_PACKAGE_dropbear=y
-          CONFIG_PACKAGE_dnsmasq=y
-          CONFIG_PACKAGE_firewall4=y
-          CONFIG_PACKAGE_odhcp6c=y
-          CONFIG_PACKAGE_odhcp6c_ext_cer_id=0
-          CONFIG_PACKAGE_odhcpd-ipv6only=y
-          CONFIG_PACKAGE_odhcpd-ipv6only_ext_cer_id=0
-          CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
-
-          CONFIG_DEVEL=y
-          CONFIG_KERNEL_BUILD_USER="github"
-          CONFIG_KERNEL_BUILD_DOMAIN="github-actions"
-
-          CONFIG_CCACHE=y
           EOF
 
           make defconfig
 
-          echo
-          echo "========== TARGET CONFIG =========="
-          grep -E \
-            'CONFIG_TARGET_|CONFIG_PACKAGE_(busybox|dropbear|dnsmasq)' \
-            .config || true
-
-          echo
-          echo "========== EN7523 CONFIG =========="
-          grep -i en7523 .config || true
-
-
-      # ============================================================
-      # 7. 下载源码包
-      # ============================================================
       - name: Download sources
         working-directory: openwrt
         run: |
-          make download -j$(nproc) V=s
+          make download -j$(nproc)
 
-
-      # ============================================================
-      # 8. 编译 OpenWrt
-      #
-      # 第一次编译失败时输出详细错误
-      # ============================================================
-      - name: Build OpenWrt
+      - name: Build
         working-directory: openwrt
         run: |
           make -j$(nproc) V=s
 
-
-      # ============================================================
-      # 9. 列出生成文件
-      # ============================================================
-      - name: List build output
+      - name: Show output
         working-directory: openwrt
         run: |
-          echo "========== BIN DIRECTORY =========="
-
-          find bin \
-            -type f \
-            -printf '%p  %k KB\n' \
-            | sort
+          echo "===== Firmware ====="
+          find bin/targets -type f -print
 
           echo
-          echo "========== KERNEL OUTPUT =========="
+          echo "===== DTB ====="
+          find build_dir -type f -name 'en7523-evb.dtb' -print
 
-          find build_dir \
-            -type f \
-            \( \
-              -name "Image" \
-              -o -name "*.dtb" \
-              -o -name "fit*" \
-              -o -name "vmlinux*" \
-            \) \
-            -print \
-            | head -100
-
-
-      # ============================================================
-      # 10. 单独提取 EN7523 Kernel / DTB
-      #
-      # 方便你后面使用 U-Boot bootm / booti / bootz 测试
-      # ============================================================
-      - name: Collect EN7523 kernel and DTB
-        working-directory: openwrt
-        run: |
-
-          mkdir -p ../en7523-output
-
-          echo "Searching kernel..."
-
-          find build_dir \
-            -type f \
-            \( \
-              -name "Image" \
-              -o -name "fit*" \
-              -o -name "vmlinux*" \
-            \) \
-            -print \
-            | head -50
-
-          echo
-          echo "Searching DTB..."
-
-          find build_dir \
-            -type f \
-            -name "en7523-evb.dtb" \
-            -print
-
-          echo
-          echo "Copying files..."
-
-          find build_dir \
-            -type f \
-            -name "en7523-evb.dtb" \
-            -exec cp -v {} ../en7523-output/ \;
-
-          find build_dir \
-            -type f \
-            -name "Image" \
-            -exec cp -v {} ../en7523-output/ \;
-
-          find build_dir \
-            -type f \
-            \( -name "fit*" -o -name "vmlinux*" \) \
-            -exec cp -v {} ../en7523-output/ \; \
-            || true
-
-          echo
-          echo "========== EN7523 OUTPUT =========="
-
-          ls -lah ../en7523-output || true
-
-
-      # ============================================================
-      # 11. 上传完整 OpenWrt 固件
-      # ============================================================
-      - name: Upload OpenWrt firmware
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-en7523-firmware
+          name: en7523-firmware
           path: |
             openwrt/bin/targets/airoha/en7523/**
-          if-no-files-found: error
-          retention-days: 30
 
-
-      # ============================================================
-      # 12. 上传 Kernel / DTB
-      # ============================================================
-      - name: Upload Kernel and DTB
+      - name: Upload DTS
         uses: actions/upload-artifact@v4
         with:
-          name: en7523-kernel-dtb
+          name: en7523-dtb
           path: |
-            en7523-output/**
-          if-no-files-found: warn
-          retention-days: 30
-
-
-      # ============================================================
-      # 13. 保存 .config
-      # ============================================================
-      - name: Upload build configuration
-        uses: actions/upload-artifact@v4
-        with:
-          name: en7523-build-config
-          path: |
-            openwrt/.config
-          if-no-files-found: error
-          retention-days: 30
-```
+            openwrt/target/linux/airoha/dts/en7523-evb.dts

@@ -173,6 +173,22 @@ jobs:
       # ============================================================
       # Build
       # ============================================================
+      - name: Prepare kernel configuration
+        working-directory: openwrt
+        run: |
+          make target/linux/prepare V=s
+      
+          KERNEL_DIR=$(find build_dir -maxdepth 3 -type d \
+            -path '*/linux-airoha_en7523/linux-*' | head -1)
+      
+          echo "Kernel directory:"
+          echo "$KERNEL_DIR"
+      
+          test -n "$KERNEL_DIR"
+      
+          cd "$KERNEL_DIR"
+      
+          yes "" | make oldconfig
       - name: Build OpenWrt
         working-directory: openwrt
         run: |
